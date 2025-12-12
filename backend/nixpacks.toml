@@ -1,0 +1,14 @@
+[phases.setup]
+nixPkgs = ["python311", "gcc", "pkg-config"]
+
+[phases.install]
+cmds = [
+  "pip install --upgrade pip",
+  "pip install -r requirements.txt"
+]
+
+[phases.build]
+cmds = ["echo 'Build complete'"]
+
+[start]
+cmd = "gunicorn rag_service:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300"

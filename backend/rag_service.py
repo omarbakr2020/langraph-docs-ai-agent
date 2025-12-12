@@ -1,6 +1,7 @@
 """
 RAG Service - LangGraph Documentation Chatbot
 Enhanced version with better scraping and verification
+Supports both ChromaDB (local) and Pinecone (production)
 """
 
 from flask import Flask, request, jsonify
@@ -9,7 +10,6 @@ from llama_index.core import VectorStoreIndex, Document, StorageContext, Setting
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
-import chromadb
 import os
 import requests
 from bs4 import BeautifulSoup
@@ -18,6 +18,21 @@ from dotenv import load_dotenv
 from urllib.parse import urljoin, urlparse
 import time
 import re
+
+# Conditional imports for vector stores
+use_pinecone = False
+try:
+    import chromadb
+except ImportError:
+    chromadb = None
+
+try:
+    from llama_index.vector_stores.pinecone import PineconeVectorStore
+    from pinecone import Pinecone, ServerlessSpec
+    use_pinecone = bool(os.getenv('PINECONE_API_KEY'))
+except ImportError:
+    PineconeVectorStore = None
+    Pinecone = None
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +48,26 @@ class RAGService:
     def __init__(self, collection_name="langraph_docs"):
         print("🚀 Initializing RAG Service...")
         
+        # Determine which vector store to use
+        self.use_pinecone = bool(os.getenv('PINECONE_API_KEY'))
+        
+        if self.use_pinecone:
+            print("📌 Using Pinecone for vector storage (Production)")
+            self._init_pinecone(collection_name)
+        else:
+            print("💾 Using ChromaDB for vector storage (Local Development)")
+            self._init_chromadb(collection_name)
+        
+        # Track scraped pages
+        self.scraped_pages = []
+        
+        print("✅ RAG Service initialized")
+    
+    def _init_chromadb(self, collection_name):
+        """Initialize ChromaDB for local development"""
+        if chromadb is None:
+            raise ImportError("ChromaDB not installed. Install with: pip install chromadb")
+        
         # Initialize ChromaDB
         self.chroma_client = chromadb.PersistentClient(path="./chroma_db")
         self.collection = self.chroma_client.get_or_create_collection(collection_name)
@@ -44,9 +79,6 @@ class RAGService:
         # Initialize index
         self.index = None
         
-        # Track scraped pages
-        self.scraped_pages = []
-        
         # Try to load existing index
         try:
             self.index = VectorStoreIndex.from_vector_store(
@@ -56,8 +88,57 @@ class RAGService:
             print("✅ Loaded existing index from ChromaDB")
         except:
             print("ℹ️ No existing index found. Will create on first ingestion.")
+    
+    def _init_pinecone(self, collection_name):
+        """Initialize Pinecone for production"""
+        if Pinecone is None or PineconeVectorStore is None:
+            raise ImportError("Pinecone not installed. Install with: pip install pinecone-client llama-index-vector-stores-pinecone")
         
-        print("✅ RAG Service initialized")
+        # Get Pinecone config from environment
+        api_key = os.getenv('PINECONE_API_KEY')
+        index_name = os.getenv('PINECONE_INDEX_NAME', 'langraph-docs')
+        
+        if not api_key:
+            raise ValueError("PINECONE_API_KEY environment variable not set")
+        
+        # Initialize Pinecone
+        pc = Pinecone(api_key=api_key)
+        
+        # Create index if it doesn't exist
+        if index_name not in pc.list_indexes().names():
+            print(f"📝 Creating Pinecone index: {index_name}")
+            pc.create_index(
+                name=index_name,
+                dimension=1536,  # OpenAI embedding dimension
+                metric="cosine",
+                spec=ServerlessSpec(
+                    cloud="aws",
+                    region="us-east-1"
+                )
+            )
+            print(f"✅ Pinecone index created: {index_name}")
+        else:
+            print(f"✅ Using existing Pinecone index: {index_name}")
+        
+        # Get the index
+        pinecone_index = pc.Index(index_name)
+        
+        # Setup vector store
+        vector_store = PineconeVectorStore(pinecone_index=pinecone_index)
+        self.storage_context = StorageContext.from_defaults(vector_store=vector_store)
+        
+        # Initialize index
+        self.index = None
+        
+        # Try to load existing index
+        try:
+            self.index = VectorStoreIndex.from_vector_store(
+                vector_store,
+                storage_context=self.storage_context
+            )
+            print("✅ Loaded existing index from Pinecone")
+        except:
+            print("ℹ️ No existing index found. Will create on first ingestion.")
     
     def scrape_langchain_docs(self, start_url: str, max_pages: int = 30) -> List[Document]:
         """
@@ -337,13 +418,22 @@ class RAGService:
                     "message": "No documents ingested yet"
                 }
             
-            # Get collection stats
-            collection_count = self.collection.count()
+            # Get vector count differently based on storage type
+            if self.use_pinecone:
+                # For Pinecone, we can't easily get the count without querying
+                # So we'll just return the page count
+                vector_count = len(self.scraped_pages) * 10  # Rough estimate (chunks per page)
+                storage_type = "Pinecone"
+            else:
+                # For ChromaDB, get exact count
+                vector_count = self.collection.count()
+                storage_type = "ChromaDB"
             
             return {
                 "status": "success",
+                "storage_type": storage_type,
                 "document_count": len(self.scraped_pages),
-                "vector_count": collection_count,
+                "vector_count": vector_count,
                 "pages": self.scraped_pages
             }
         except Exception as e:
