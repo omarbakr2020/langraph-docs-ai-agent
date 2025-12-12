@@ -1,0 +1,249 @@
+{
+  "name": "2. Chat Query Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-chat",
+      "name": "Webhook - Chat Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "chat",
+      "notes": "Receives chat queries from Next.js frontend"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "question",
+              "value": "={{ $json.body.question }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $json.body.timestamp || $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "extract-question",
+      "name": "Extract Question",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "notes": "Prepares the query for the RAG service"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:5001/query",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "question",
+              "value": "={{ $json.question }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "call-rag-query",
+      "name": "Call RAG Service - Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 300],
+      "notes": "Queries the RAG system for an answer"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "value2": "success"
+            }
+          ]
+        }
+      },
+      "id": "check-query-success",
+      "name": "Check Query Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "answer",
+              "value": "={{ $json.answer }}"
+            },
+            {
+              "name": "response",
+              "value": "={{ $json.answer }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}"
+            }
+          ],
+          "object": [
+            {
+              "name": "sources",
+              "value": "={{ $json.sources }}"
+            }
+          ]
+        }
+      },
+      "id": "format-success-response",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "notes": "Formats the successful response with sources as array"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "answer",
+              "value": "Sorry, I couldn't process that query. Please try again."
+            },
+            {
+              "name": "response",
+              "value": "Sorry, I couldn't process that query. Please try again."
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.answer || 'Unknown error' }}"
+            },
+            {
+              "name": "status",
+              "value": "error"
+            }
+          ],
+          "object": [
+            {
+              "name": "sources",
+              "value": "=[]"
+            }
+          ]
+        }
+      },
+      "id": "format-error-response",
+      "name": "Format Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "notes": "Handles errors gracefully"
+    },
+    {
+      "parameters": {
+        "respondWith": "json"
+      },
+      "id": "respond-to-frontend",
+      "name": "Respond to Frontend",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "notes": "Sends response back to Next.js - empty body auto-sends $json"
+    }
+  ],
+  "connections": {
+    "Webhook - Chat Query": {
+      "main": [
+        [
+          {
+            "node": "Extract Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Question": {
+      "main": [
+        [
+          {
+            "node": "Call RAG Service - Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call RAG Service - Query": {
+      "main": [
+        [
+          {
+            "node": "Check Query Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Query Success": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "2",
+  "meta": {
+    "instanceId": "your-instance-id"
+  },
+  "id": "2",
+  "tags": []
+}

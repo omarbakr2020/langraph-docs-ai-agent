@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+
+# ChromaDB
+chroma_db/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+frontend/build/
+
+# n8n
+.n8n/
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary
+*.tmp
+temp/

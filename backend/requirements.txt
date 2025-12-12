@@ -1,0 +1,22 @@
+# Core RAG dependencies
+llama-index==0.11.23
+llama-index-llms-openai==0.2.10
+llama-index-embeddings-openai==0.2.5
+llama-index-vector-stores-chroma==0.3.0
+
+# Vector store
+chromadb==0.5.23
+
+# API framework
+flask==3.1.0
+flask-cors==5.0.0
+
+# Web scraping
+beautifulsoup4==4.12.3
+requests==2.32.3
+
+# Environment management
+python-dotenv==1.0.1
+
+# OpenAI
+openai==1.58.1
